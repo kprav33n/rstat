@@ -14,6 +14,52 @@ from bs4 import BeautifulSoup
 from tabulate import tabulate
 
 
+def parse_args():
+    """
+    Parse command line arguments and return them.
+    """
+    parser = ArgumentParser(description='USCIS Case Status Checker')
+    parser.add_argument('--receipt-numbers', '-n', type=str, nargs='*',
+                        help='Receipt numbers')
+    parser.add_argument('--num-threads', '-t', type=int, default=16,
+                        help='Maximum number of threads')
+    parser.add_argument('--before-cases', '-B', type=int, default=0,
+                        help='Number of cases before the given receipt number')
+    parser.add_argument('--after-cases', '-A', type=int, default=0,
+                        help='Number of cases after the given receipt number')
+    args = parser.parse_args()
+
+    if not args.receipt_numbers:
+        print('At least one receipt number is required')
+        sys.exit(1)
+
+    if (((args.before_cases > 0 or args.after_cases > 0) and
+         len(args.receipt_numbers) > 1)):
+        print('Use only one receipt number for bulk case queries')
+        sys.exit(1)
+
+    return args
+
+
+def get_receipt_numbers(args):
+    """
+    Return receipt numbers to query from args.
+    """
+    base_center = args.receipt_numbers[0][:3]
+    base_receipt_number = int(args.receipt_numbers[0][3:])
+    before_numbers = []
+    after_numbers = []
+    if args.before_cases > 0:
+        for number in range(base_receipt_number - 1,
+                            base_receipt_number - args.before_cases - 1, -1):
+            before_numbers.append(f'{base_center}{number}')
+    if args.after_cases > 0:
+        for number in range(base_receipt_number + 1,
+                            base_receipt_number + args.before_cases + 1):
+            after_numbers.append(f'{base_center}{number}')
+    return before_numbers + args.receipt_numbers + after_numbers
+
+
 def get_status(receipt_number):
     """
     Get the case status of a given receipt number.
@@ -39,40 +85,8 @@ def main():
     """
     Main entrypoint.
     """
-    parser = ArgumentParser(description='USCIS Case Status Checker')
-    parser.add_argument('--receipt-numbers', '-n', type=str, nargs='*',
-                        help='Receipt numbers')
-    parser.add_argument('--num-threads', '-t', type=int, default=16,
-                        help='Maximum number of threads')
-    parser.add_argument('--before-cases', '-B', type=int, default=0,
-                        help='Number of cases before the given receipt number')
-    parser.add_argument('--after-cases', '-A', type=int, default=0,
-                        help='Number of cases after the given receipt number')
-    args = parser.parse_args()
-
-    if not args.receipt_numbers:
-        print('At least one receipt number is required')
-        sys.exit(1)
-
-    if (((args.before_cases > 0 or args.after_cases > 0) and
-         len(args.receipt_numbers) > 1)):
-        print('Use only one receipt number for bulk case queries')
-        sys.exit(1)
-
-    base_center = args.receipt_numbers[0][:3]
-    base_receipt_number = int(args.receipt_numbers[0][3:])
-    before_numbers = []
-    after_numbers = []
-    if args.before_cases > 0:
-        for number in range(base_receipt_number - 1,
-                            base_receipt_number - args.before_cases - 1, -1):
-            before_numbers.append(f'{base_center}{number}')
-    if args.after_cases > 0:
-        for number in range(base_receipt_number + 1,
-                            base_receipt_number + args.before_cases + 1):
-            after_numbers.append(f'{base_center}{number}')
-    receipt_numbers = before_numbers + args.receipt_numbers + after_numbers
-
+    args = parse_args()
+    receipt_numbers = get_receipt_numbers(args)
     with ThreadPoolExecutor(max_workers=args.num_threads) as executor:
         statuses = executor.map(get_status, receipt_numbers)
 
