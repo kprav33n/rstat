@@ -5,7 +5,9 @@ USCIS Case Status Checker.
 """
 
 from argparse import ArgumentParser
+from concurrent.futures import ThreadPoolExecutor
 import sys
+import re
 
 import requests
 from bs4 import BeautifulSoup
@@ -24,7 +26,8 @@ def get_status(receipt_number):
                          data)
     soup = BeautifulSoup(resp.text, 'html.parser')
     div = soup.find('div', **{'class': 'rows text-center'})
-    return div.h1.text, div.p.text
+    match = re.search(r'Form (I-\d+),', div.p.text)
+    return match.group(1), div.h1.text, div.p.text
 
 
 def main():
@@ -34,21 +37,23 @@ def main():
     parser = ArgumentParser(description='USCIS Case Status Checker')
     parser.add_argument('--receipt-numbers', '-n', type=str, nargs='*',
                         help='Receipt numbers')
+    parser.add_argument('--num-threads', '-t', type=int, default=16,
+                        help='Maximum number of threads')
     args = parser.parse_args()
 
     if not args.receipt_numbers:
         print('At least one receipt number is required')
         sys.exit(1)
 
-    statuses = [
-        (receipt_number, ) + get_status(receipt_number)
-        for receipt_number in args.receipt_numbers
+    with ThreadPoolExecutor(max_workers=args.num_threads) as executor:
+        statuses = executor.map(get_status, args.receipt_numbers)
+
+    summaries = [
+        (receipt_number, form, summary)
+        for receipt_number, (form, summary, _) in zip(args.receipt_numbers,
+                                                      statuses)
     ]
-    summary = [
-        (receipt_number, summary)
-        for receipt_number, summary, _ in statuses
-    ]
-    print(tabulate(summary, ['Receipt Number', 'Summary'],
+    print(tabulate(summaries, ['Receipt Number', 'Form', 'Summary'],
                    tablefmt='fancy_grid'))
 
 
