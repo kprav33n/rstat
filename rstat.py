@@ -17,6 +17,8 @@ from tabulate import tabulate
 def get_status(receipt_number):
     """
     Get the case status of a given receipt number.
+
+    Returns form number, summary and description.
     """
     data = {
         'appReceiptNum': receipt_number,
@@ -26,8 +28,11 @@ def get_status(receipt_number):
                          data)
     soup = BeautifulSoup(resp.text, 'html.parser')
     div = soup.find('div', **{'class': 'rows text-center'})
-    match = re.search(r'Form (I-\d+),', div.p.text)
-    return match.group(1), div.h1.text, div.p.text
+    form = 'NA'
+    match = re.search(r'Form ([^,]+),', div.p.text)
+    if match:
+        form = match.group(1)
+    return form, div.h1.text, div.p.text
 
 
 def main():
@@ -39,18 +44,41 @@ def main():
                         help='Receipt numbers')
     parser.add_argument('--num-threads', '-t', type=int, default=16,
                         help='Maximum number of threads')
+    parser.add_argument('--before-cases', '-B', type=int, default=0,
+                        help='Number of cases before the given receipt number')
+    parser.add_argument('--after-cases', '-A', type=int, default=0,
+                        help='Number of cases after the given receipt number')
     args = parser.parse_args()
 
     if not args.receipt_numbers:
         print('At least one receipt number is required')
         sys.exit(1)
 
+    if (((args.before_cases > 0 or args.after_cases > 0) and
+         len(args.receipt_numbers) > 1)):
+        print('Use only one receipt number for bulk case queries')
+        sys.exit(1)
+
+    base_center = args.receipt_numbers[0][:3]
+    base_receipt_number = int(args.receipt_numbers[0][3:])
+    before_numbers = []
+    after_numbers = []
+    if args.before_cases > 0:
+        for number in range(base_receipt_number - 1,
+                            base_receipt_number - args.before_cases - 1, -1):
+            before_numbers.append(f'{base_center}{number}')
+    if args.after_cases > 0:
+        for number in range(base_receipt_number + 1,
+                            base_receipt_number + args.before_cases + 1):
+            after_numbers.append(f'{base_center}{number}')
+    receipt_numbers = before_numbers + args.receipt_numbers + after_numbers
+
     with ThreadPoolExecutor(max_workers=args.num_threads) as executor:
-        statuses = executor.map(get_status, args.receipt_numbers)
+        statuses = executor.map(get_status, receipt_numbers)
 
     summaries = [
         (receipt_number, form, summary)
-        for receipt_number, (form, summary, _) in zip(args.receipt_numbers,
+        for receipt_number, (form, summary, _) in zip(receipt_numbers,
                                                       statuses)
     ]
     print(tabulate(summaries, ['Receipt Number', 'Form', 'Summary'],
