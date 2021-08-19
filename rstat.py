@@ -64,7 +64,7 @@ def get_status(receipt_number):
     """
     Get the case status of a given receipt number.
 
-    Returns form number, summary and description.
+    Returns form number, last updated date, summary and description.
     """
     data = {
         'appReceiptNum': receipt_number,
@@ -74,11 +74,21 @@ def get_status(receipt_number):
                          data)
     soup = BeautifulSoup(resp.text, 'html.parser')
     div = soup.find('div', **{'class': 'rows text-center'})
+
+    summary = div.h1.text
+    description = div.p.text
+
     form = 'NA'
-    match = re.search(r'Form ([^,]+),', div.p.text)
+    match = re.search(r'Form ([^,]+),', description)
     if match:
         form = match.group(1)
-    return form, div.h1.text, div.p.text
+
+    last_update = 'NA'
+    match = re.search(r'(As of|On) (\w+ \d+, \d+),', description)
+    if match:
+        last_update = match.group(2)
+
+    return form, last_update, summary, description
 
 
 def main():
@@ -91,11 +101,12 @@ def main():
         statuses = executor.map(get_status, receipt_numbers)
 
     summaries = [
-        (receipt_number, form, summary)
-        for receipt_number, (form, summary, _) in zip(receipt_numbers,
-                                                      statuses)
+        (number, form, summary, last_update)
+        for number, (form, last_update, summary, _) in zip(receipt_numbers,
+                                                           statuses)
     ]
-    print(tabulate(summaries, ['Receipt Number', 'Form', 'Summary'],
+    print(tabulate(summaries,
+                   ['Receipt Number', 'Form', 'Summary', 'Last Update'],
                    tablefmt='fancy_grid'))
 
 
